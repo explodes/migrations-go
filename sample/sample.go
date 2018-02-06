@@ -36,21 +36,21 @@ const (
 	DowngradeNotSupported = ``
 	UpgradeInitial        = `
 CREATE TABLE users (
-  id       BIGSERIAL PRIMARY KEY,
+  id       INTEGER PRIMARY KEY,
   username VARCHAR(64),
   email    VARCHAR(128)
 );
 
 CREATE TABLE post (
-  id      BIGSERIAL PRIMARY KEY,
-  user_id INT  NOT NULL,
+  id      INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
   content TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users (id)
 );
 	`
 	UpgradeImages = `
 CREATE TABLE images (
-  id  BIGSERIAL PRIMARY KEY,
+  id  INTEGER PRIMARY KEY,
   url TEXT
 )
 `
