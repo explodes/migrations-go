@@ -15,12 +15,12 @@ type Migration interface {
 	Name() string
 
 	// Upgrade runs the upwards migration
-	Upgrade(db *sql.DB) error
+	Upgrade(tx *sql.Tx) error
 
 	// Downgrade performs the undoing of this migration.
 	// If downgrading is not supported, it should return
 	// ErrDowngradeNotSupported
-	Downgrade(db *sql.DB) error
+	Downgrade(tx *sql.Tx) error
 }
 
 type simpleSqlMigration struct {
@@ -46,15 +46,15 @@ func (m simpleSqlMigration) Name() string {
 	return m.name
 }
 
-func (m simpleSqlMigration) Upgrade(db *sql.DB) error {
-	_, err := db.Exec(m.upgrade)
+func (m simpleSqlMigration) Upgrade(tx *sql.Tx) error {
+	_, err := tx.Exec(m.upgrade)
 	return err
 }
 
-func (m simpleSqlMigration) Downgrade(db *sql.DB) error {
+func (m simpleSqlMigration) Downgrade(tx *sql.Tx) error {
 	if m.downgrade == "" {
 		return ErrDowngradeNotSupported
 	}
-	_, err := db.Exec(m.downgrade)
+	_, err := tx.Exec(m.downgrade)
 	return err
 }

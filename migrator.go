@@ -31,7 +31,23 @@ func NewMigrator(db *sql.DB, getter MigrationGetter) *Migrator {
 
 // MigrateToVersion will migrate the database up or down to get the specified version
 func (m *Migrator) MigrateToVersion(version int) error {
-	current, err := m.GetCurrentVersion()
+	var tx *sql.Tx
+	var err error
+
+	// start our transaction
+	tx, err = m.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
+	current, err := m.getCurrentVersion(tx)
 	if err != nil {
 		return err
 	}
@@ -43,15 +59,13 @@ func (m *Migrator) MigrateToVersion(version int) error {
 
 	// upgrade or downgrade
 	if version < current {
-		return m.DowngradeDatabase(current, version)
+		return m.downgradeDatabase(tx, current, version)
 	} else {
-		return m.UpgradeDatabase(current, version)
+		return m.upgradeDatabase(tx, current, version)
 	}
 }
 
 func (m *Migrator) GetCurrentVersion() (version int, err error) {
-	version = 0
-
 	// start our transaction
 	tx, err := m.db.Begin()
 	if err != nil {
@@ -64,7 +78,10 @@ func (m *Migrator) GetCurrentVersion() (version int, err error) {
 		}
 		err = tx.Commit()
 	}()
+	return m.getCurrentVersion(tx)
+}
 
+func (m *Migrator) getCurrentVersion(tx *sql.Tx) (version int, err error) {
 	// create our table if it doesn't exist already
 	if _, err = tx.Exec(`CREATE TABLE IF NOT EXISTS migrations (version INTEGER NOT NULL UNIQUE, name TEXT NOT NULL, date_ran TIMESTAMP WITH TIME ZONE NOT NULL)`); err != nil {
 		return
@@ -87,42 +104,42 @@ func (m *Migrator) GetCurrentVersion() (version int, err error) {
 	return
 }
 
-func (m *Migrator) recordUpgrade(version int, migration Migration) error {
-	_, err := m.db.Exec(`INSERT INTO migrations (version, name, date_ran) VALUES ($1,$2,$3)`, version+1, migration.Name(), time.Now())
+func (m *Migrator) recordUpgrade(tx *sql.Tx, version int, migration Migration) error {
+	_, err := tx.Exec(`INSERT INTO migrations (version, name, date_ran) VALUES ($1,$2,$3)`, version+1, migration.Name(), time.Now())
 	return err
 }
 
-func (m *Migrator) UpgradeDatabase(from, to int) error {
+func (m *Migrator) upgradeDatabase(tx *sql.Tx, from, to int) error {
 	for version := from; version < to; version ++ {
 		migration := m.getter.GetMigration(version + 1)
 		if migration == nil {
 			return fmt.Errorf("unexpected nil upgrade migration for version %d", version)
 		}
-		if err := migration.Upgrade(m.db); err != nil {
+		if err := migration.Upgrade(tx); err != nil {
 			return err
 		}
-		if err := m.recordUpgrade(version, migration); err != nil {
+		if err := m.recordUpgrade(tx, version, migration); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *Migrator) recordDowngrade(version int) error {
-	_, err := m.db.Exec(`DELETE FROM migrations WHERE version = $1`, version+1)
+func (m *Migrator) recordDowngrade(tx *sql.Tx, version int) error {
+	_, err := tx.Exec(`DELETE FROM migrations WHERE version = $1`, version+1)
 	return err
 }
 
-func (m *Migrator) DowngradeDatabase(from, to int) error {
+func (m *Migrator) downgradeDatabase(tx *sql.Tx, from, to int) error {
 	for version := from - 1; version >= to; version -- {
 		migration := m.getter.GetMigration(version + 1)
 		if migration == nil {
 			return fmt.Errorf("unexpected nil downgrade migration for version %d", version)
 		}
-		if err := migration.Downgrade(m.db); err != nil {
+		if err := migration.Downgrade(tx); err != nil {
 			return err
 		}
-		if err := m.recordDowngrade(version); err != nil {
+		if err := m.recordDowngrade(tx, version); err != nil {
 			return err
 		}
 	}
